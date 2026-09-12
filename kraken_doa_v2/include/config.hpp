@@ -24,7 +24,8 @@ constexpr int FFT_SIZE = 16384;
 // NUM_DEVICES). The count actually in use is the runtime atomic
 // active_num_elements, synced from the 8091 packet header.
 constexpr int MAX_CHANNELS = 8;
-constexpr float SAMPLE_RATE = 2.4e6f; // 2.4 MSPS
+// constexpr float SAMPLE_RATE = 2.4e6f; // 2.4 MSPS
+inline float SAMPLE_RATE = 2.4e6f;
 constexpr int DECIMATION_FACTOR = 10;
 // IMPORTANT: If browser uses different rate, change this to match!
 // Common rates: 44100 (CD quality), 48000 (professional), 96000 (high-end)

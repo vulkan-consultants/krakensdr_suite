@@ -145,7 +145,7 @@ static bool is_query_command(string_view msg) {
 // new clients continuously via the binary FFT header.
 static bool is_replayed_command(string_view msg) {
     static const char* prefixes[] = {
-        "TOPOLOGY:", "RADIUS:", "SPACING:", "ELEVATION_RESOLUTION:",
+        "TOPOLOGY:", "RADIUS:", "SPACING:", "CUSTOM_POSITIONS:", "ELEVATION_RESOLUTION:",
         "MUSIC_NUM_SNAPSHOTS:", "MUSIC_SNAPSHOT_LENGTH:",
         "MUSIC_FB_AVERAGING:", "MUSIC_COVARIANCE_ALPHA:", "EDGE_CLIP:",
         "MUSIC_SIGNAL_SOURCES:", "ULA_MODE:", "ARRAY_OFFSET:",

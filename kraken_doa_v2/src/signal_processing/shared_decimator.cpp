@@ -182,7 +182,12 @@ int SharedDecimator::getDecimationFactor() const {
 }
 
 float SharedDecimator::getBandwidthMhz() const {
-    return getBandwidthOptionSafe(current_bandwidth_index.load()).bandwidth_mhz;
+    // return getBandwidthOptionSafe(current_bandwidth_index.load()).bandwidth_mhz;
+    const int decimation = getDecimationFactor();
+    if (decimation <= 0) {
+        return 0.0f;
+    }
+    return (SAMPLE_RATE / static_cast<float>(decimation)) / 1.0e6f;
 }
 
 const char* SharedDecimator::getBandwidthName() const {

@@ -1,4 +1,5 @@
 #include "settings_store.hpp"
+#include "config.hpp"
 
 #include <map>
 #include <mutex>
@@ -22,9 +23,10 @@ namespace {
 
     struct Setting {
         const char* key;     // JSON key
-        const char* prefix;  // command prefix, including the trailing ':'
+        const char* prefix;  // command prefix, including the trailing ':'; nullptr for config-only
         VType type;          // how the value is written/read in JSON
         const char* def;     // hardcoded default, in command-suffix form
+        bool replay = true;  // false = persist/configure only; no ControlHandler replay
     };
 
     // The canonical list of remembered settings. Values are stored internally in
@@ -33,48 +35,64 @@ namespace {
     // Order is the file's order and the startup replay order - CHANNEL precedes
     // FREQ/GAIN, which depend on the active channel.
     const Setting SCHEMA[] = {
+        // Receiver compatibility. Defaults preserve stock Heimdall-v2 behavior.
+        // These values live in doa_settings.json but are consumed directly by
+        // DataReceiver rather than replayed through ControlHandler.
+        {"receiver_host",         nullptr, VType::STRING, "127.0.0.1", false},
+        {"receiver_data_port",    nullptr, VType::NUMBER, "8091",      false},
+        {"receiver_control_port", nullptr, VType::NUMBER, "8092",      false},
+        {"receiver_sample_rate_hz", nullptr, VType::NUMBER, "2400000", false},
+
         // Tuner / audio
-        {"fm",                       "FM:",                       VType::BOOL,   "1"},
-        {"doa",                      "DOA:",                      VType::BOOL,   "1"},
-        {"channel",                  "CHANNEL:",                  VType::NUMBER, "0"},
+        {"fm", "FM:", VType::BOOL, "1"},
+        {"doa", "DOA:", VType::BOOL, "1"},
+        {"channel", "CHANNEL:", VType::NUMBER, "0"},
         // Wideband (downconverter) variant mixing side (high|low|below);
         // applied only when running with --wideband, remembered either way.
         // MUST precede FREQ: the replayed frequency is range-checked against
         // the selected side.
-        {"mixer_side",               "MIXER_SIDE:",               VType::STRING, "high"},
+        {"mixer_side", "MIXER_SIDE:", VType::STRING, "high"},
         // (antenna ring is no longer persisted - it is auto-selected from the
         // tuned frequency; a stale antenna_array field in an old settings file
         // is simply ignored)
         // Wideband variant LO output drive current (0-7)
-        {"lo_current",               "LO_CURRENT:",               VType::NUMBER, "3"},
-        {"frequency_mhz",            "FREQ:",                     VType::NUMBER, "100.000"},
-        {"gain_db",                  "GAIN:",                     VType::NUMBER, "49.6"},
-        {"averaging_alpha",          "AVG:",                      VType::NUMBER, "0.150"},
+        {"lo_current", "LO_CURRENT:", VType::NUMBER, "3"},
+        {"frequency_mhz", "FREQ:", VType::NUMBER, "100.000"},
+        {"gain_db", "GAIN:", VType::NUMBER, "49.6"},
+        {"averaging_alpha", "AVG:", VType::NUMBER, "0.150"},
         // MUSIC / DoA array
-        {"topology",                 "TOPOLOGY:",                 VType::STRING, "UCA"},
-        {"array_radius_mm",          "RADIUS:",                   VType::NUMBER, "50"},
-        {"element_spacing_mm",       "SPACING:",                  VType::NUMBER, "30"},
-        {"ula_mode",                 "ULA_MODE:",                 VType::STRING, "BOTH"},
-        {"array_offset_deg",         "ARRAY_OFFSET:",             VType::NUMBER, "0"},
+        {"topology", "TOPOLOGY:", VType::STRING, "UCA"},
+        {"array_radius_mm", "RADIUS:", VType::NUMBER, "50"},
+        {"element_spacing_mm", "SPACING:", VType::NUMBER, "30"},
+
+        // Custom antenna element coordinates, millimeters.
+        // Format:
+        // x0,y0,z0;x1,y1,z1;x2,y2,z2;x3,y3,z3;x4,y4,z4
+        {
+            "custom_positions", "CUSTOM_POSITIONS:", VType::STRING,
+            "104,0,0;32.14,-98.91,0;-84.14,-61.13,0;-84.14,61.13,0;32.14,98.91,0"
+        },
+        {"ula_mode", "ULA_MODE:", VType::STRING, "BOTH"},
+        {"array_offset_deg", "ARRAY_OFFSET:", VType::NUMBER, "0"},
         // Forward-backward averaging (applied only while topology is ULA)
-        {"fb_averaging",             "MUSIC_FB_AVERAGING:",       VType::BOOL,   "0"},
+        {"fb_averaging", "MUSIC_FB_AVERAGING:", VType::BOOL, "0"},
         // Temporal covariance smoothing: new-frame weight, 1.0 = off
-        {"covariance_alpha",         "MUSIC_COVARIANCE_ALPHA:",   VType::NUMBER, "1.00"},
-        {"num_snapshots",            "MUSIC_NUM_SNAPSHOTS:",      VType::NUMBER, "32"},
-        {"snapshot_length",          "MUSIC_SNAPSHOT_LENGTH:",    VType::NUMBER, "256"},
+        {"covariance_alpha", "MUSIC_COVARIANCE_ALPHA:", VType::NUMBER, "1.00"},
+        {"num_snapshots", "MUSIC_NUM_SNAPSHOTS:", VType::NUMBER, "32"},
+        {"snapshot_length", "MUSIC_SNAPSHOT_LENGTH:", VType::NUMBER, "256"},
         // Signal-subspace dimension; 0 = automatic (eigenvalue threshold)
-        {"signal_sources",           "MUSIC_SIGNAL_SOURCES:",     VType::NUMBER, "1"},
+        {"signal_sources", "MUSIC_SIGNAL_SOURCES:", VType::NUMBER, "1"},
         // Beamforming / diversity
-        {"beamforming",              "BEAMFORMING:",              VType::BOOL,   "0"},
-        {"beamforming_mode",         "BEAMFORMING_MODE:",         VType::STRING, "DAS"},
-        {"manual_steering",          "MANUAL_STEERING:",          VType::BOOL,   "0"},
-        {"steering_angle_deg",       "STEERING_ANGLE:",           VType::NUMBER, "0"},
-        {"mvdr_loading",             "MVDR_DIAGONAL_LOADING:",    VType::NUMBER, "0.500"},
+        {"beamforming", "BEAMFORMING:", VType::BOOL, "0"},
+        {"beamforming_mode", "BEAMFORMING_MODE:", VType::STRING, "DAS"},
+        {"manual_steering", "MANUAL_STEERING:", VType::BOOL, "0"},
+        {"steering_angle_deg", "STEERING_ANGLE:", VType::NUMBER, "0"},
+        {"mvdr_loading", "MVDR_DIAGONAL_LOADING:", VType::NUMBER, "0.500"},
         // Display
-        {"edge_clip",                "EDGE_CLIP:",                VType::NUMBER, "0.80"},
+        {"edge_clip", "EDGE_CLIP:", VType::NUMBER, "0.80"},
         // FFT
-        {"fft_size",                 "FFT_SIZE:",                 VType::NUMBER, "16384"},
-        {"fft_downsampling",         "FFT_DECIMATION:",           VType::NUMBER, "8"},
+        {"fft_size", "FFT_SIZE:", VType::NUMBER, "16384"},
+        {"fft_downsampling", "FFT_DECIMATION:", VType::NUMBER, "8"},
         // Decimator (VFO) setup - one composite value because the set is
         // dynamic: "<fm_index>|<vfo>;<vfo>;..." with each <vfo> =
         // "offset_hz,bw_index,demod,squelch_en,squelch_db,squelch_method,eigen_thr"
@@ -82,31 +100,31 @@ namespace {
         // renumbered 0..N-1 across restarts). Built and parsed in
         // control_handler.cpp; the default is the single startup VFO and must
         // match DecimatorInstance's constructor defaults + DEFAULT_BANDWIDTH_INDEX
-        {"decimators",               "DECIMATORS:",               VType::STRING, "0|0.00,7,WBFM,0,15.00,0,2.00"},
+        {"decimators", "DECIMATORS:", VType::STRING, "0|0.00,7,WBFM,0,15.00,0,2.00"},
         // Station
-        {"station_id",               "STATION_ID:",               VType::STRING, "KrakenSDR"},
-        {"location_source",          "LOCATION_SOURCE:",          VType::STRING, "gps"},
-        {"static_location",          "STATIC_LOCATION:",          VType::STRING, "0,0,0"},
+        {"station_id", "STATION_ID:", VType::STRING, "KrakenSDR"},
+        {"location_source", "LOCATION_SOURCE:", VType::STRING, "gps"},
+        {"static_location", "STATIC_LOCATION:", VType::STRING, "0,0,0"},
         // Web mapper output (built-in replacement for web_mapper_middleware).
         // Config precedes the enable flag in replay order so a restored
         // "enabled" starts with its key/mode/url already applied.
-        {"web_mapper_mode",          "WEB_MAPPER_MODE:",          VType::STRING, "remote"},
-        {"web_mapper_key",           "WEB_MAPPER_KEY:",           VType::STRING, ""},
-        {"web_mapper_url",           "WEB_MAPPER_URL:",           VType::STRING, "wss://map.krakenrf.com:2096"},
-        {"web_mapper_ws_port",       "WEB_MAPPER_WS_PORT:",       VType::NUMBER, "8021"},
-        {"web_mapper_enabled",       "WEB_MAPPER:",               VType::BOOL,   "0"},
+        {"web_mapper_mode", "WEB_MAPPER_MODE:", VType::STRING, "remote"},
+        {"web_mapper_key", "WEB_MAPPER_KEY:", VType::STRING, ""},
+        {"web_mapper_url", "WEB_MAPPER_URL:", VType::STRING, "wss://map.krakenrf.com:2096"},
+        {"web_mapper_ws_port", "WEB_MAPPER_WS_PORT:", VType::NUMBER, "8021"},
+        {"web_mapper_enabled", "WEB_MAPPER:", VType::BOOL, "0"},
         // Local DoA recording (config only — recording is never auto-started;
         // the target filename is transient and not persisted)
-        {"log_interval_sec",         "LOG_INTERVAL:",             VType::NUMBER, "1"},
-        {"log_format",               "LOG_FORMAT:",               VType::STRING, "sqlite"},
+        {"log_interval_sec", "LOG_INTERVAL:", VType::NUMBER, "1"},
+        {"log_format", "LOG_FORMAT:", VType::STRING, "sqlite"},
         // Spectrum / waterfall display preferences (UI:* keys)
-        {"doa_convention",           "UI:DOA_CONV:",              VType::STRING, "compass"},
-        {"waterfall_fft_ymax",       "UI:FFT_Y:",                 VType::NUMBER, "60"},
-        {"waterfall_speed",          "UI:WF_SPEED:",              VType::NUMBER, "5"},
-        {"waterfall_colormap",       "UI:WF_COLORMAP:",           VType::STRING, "sdryoussef"},
-        {"waterfall_min_db",         "UI:WF_MIN:",                VType::NUMBER, "-10"},
-        {"waterfall_max_db",         "UI:WF_MAX:",                VType::NUMBER, "50"},
-        {"waterfall_autorange",      "UI:WF_AUTO:",               VType::BOOL,   "1"},
+        {"doa_convention", "UI:DOA_CONV:", VType::STRING, "compass"},
+        {"waterfall_fft_ymax", "UI:FFT_Y:", VType::NUMBER, "60"},
+        {"waterfall_speed", "UI:WF_SPEED:", VType::NUMBER, "5"},
+        {"waterfall_colormap", "UI:WF_COLORMAP:", VType::STRING, "sdryoussef"},
+        {"waterfall_min_db", "UI:WF_MIN:", VType::NUMBER, "-10"},
+        {"waterfall_max_db", "UI:WF_MAX:", VType::NUMBER, "50"},
+        {"waterfall_autorange", "UI:WF_AUTO:", VType::BOOL, "1"},
     };
 
     map<string, string> g_store;   // JSON key -> value in command-suffix form
@@ -118,7 +136,7 @@ namespace {
 
     const Setting* find_by_prefix(string_view cmd) {
         for (const Setting& s : SCHEMA)
-            if (cmd.starts_with(s.prefix)) return &s;
+            if (s.prefix && cmd.starts_with(s.prefix)) return &s;
         return nullptr;
     }
 
@@ -253,6 +271,13 @@ void load() {
         }
     }
 
+    // Apply the receiver input sample rate before any DSP worker threads start.
+    // main.cpp calls SettingsStore::load() before creating DataReceiver/FFT workers.
+    const int configured_sample_rate_hz = get_int("receiver_sample_rate_hz", SAMPLE_RATE);
+    if (configured_sample_rate_hz > 0) {
+        SAMPLE_RATE = static_cast<float>(configured_sample_rate_hz);
+    }
+
     // Keep the file complete: create it on first run, or backfill new keys.
     if (!existed || added_missing) write_now();
 
@@ -264,10 +289,28 @@ vector<string> apply_commands() {
     vector<string> out;
     lock_guard<mutex> lk(g_mtx);
     for (const Setting& s : SCHEMA) {
+        if (!s.replay || !s.prefix) continue;
         auto it = g_store.find(s.key);
         out.push_back(string(s.prefix) + (it != g_store.end() ? it->second : string(s.def)));
     }
     return out;
+}
+
+string get_string(string_view key, string_view fallback) {
+    lock_guard<mutex> lk(g_mtx);
+    auto it = g_store.find(string(key));
+    return it != g_store.end() ? it->second : string(fallback);
+}
+
+int get_int(string_view key, int fallback) {
+    lock_guard<mutex> lk(g_mtx);
+    auto it = g_store.find(string(key));
+    if (it == g_store.end()) return fallback;
+    try {
+        return stoi(it->second);
+    } catch (...) {
+        return fallback;
+    }
 }
 
 void record(string_view command) {

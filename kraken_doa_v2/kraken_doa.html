@@ -2438,6 +2438,77 @@ function applySyncCmdInner(cmd) {
       updateSpacingFactor();
     }
   }
+  else if ((v = arg('CUSTOM_POSITIONS:')) !== null) {
+    const entries = v.split(';');
+
+    if (entries.length > 0) {
+      const newPositions = [];
+
+      for (let i = 0; i < entries.length; i++) {
+        const xyz = entries[i].split(',');
+
+        if (xyz.length !== 3) {
+          console.warn(
+                  'Invalid CUSTOM_POSITIONS entry:',
+                  entries[i]
+          );
+          return;
+        }
+
+        const x = parseFloat(xyz[0]);
+        const y = parseFloat(xyz[1]);
+        const z = parseFloat(xyz[2]);
+
+        if (!Number.isFinite(x) ||
+                !Number.isFinite(y) ||
+                !Number.isFinite(z)) {
+          console.warn(
+                  'Invalid CUSTOM_POSITIONS coordinates:',
+                  entries[i]
+          );
+          return;
+        }
+
+        newPositions.push({x:x, y:y, z:z});
+      }
+
+      customPositions = newPositions;
+
+      // Update visible input table.
+      generateCustomPositionsTable();
+
+      // Explicitly update input fields in case table already existed.
+      for (let i = 0;
+           i < Math.min(activeNumElements, customPositions.length);
+           i++) {
+
+        const xe = $id('cx' + i);
+        const ye = $id('cy' + i);
+        const ze = $id('cz' + i);
+
+        if (idle(xe)) xe.value = customPositions[i].x.toFixed(2);
+        if (idle(ye)) ye.value = customPositions[i].y.toFixed(2);
+        if (idle(ze)) ze.value = customPositions[i].z.toFixed(2);
+      }
+
+      // Update 2D/3D status and drawing.
+      is3DArray = customPositions
+              .slice(0, activeNumElements)
+              .some(p => Math.abs(p.z) > 0.01);
+
+      const info = $id('custom-3d-info');
+      if (info)
+        info.style.display = is3DArray ? 'block' : 'none';
+
+      drawCustomDiagram();
+      updateSpacingFactor();
+
+      console.log(
+              'Loaded CUSTOM_POSITIONS from server:',
+              customPositions
+      );
+    }
+  }
   else if ((v = arg('MUSIC_NUM_SNAPSHOTS:')) !== null) {
     const el = $id('music-num-snapshots');
     if (idle(el) && el.value != v) { el.value = v; updateMusicNumSnapshots(v); }

@@ -35,4 +35,9 @@ namespace SettingsStore {
 
     // Write immediately if there are unsaved changes.
     void flush();
+
+    // Read persisted compatibility/config-only values without replaying them
+    // through ControlHandler. Used by DataReceiver for a remote receiver server.
+    std::string get_string(std::string_view key, std::string_view fallback = {});
+    int get_int(std::string_view key, int fallback);
 }

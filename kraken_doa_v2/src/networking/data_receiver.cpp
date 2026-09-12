@@ -19,6 +19,7 @@
 #include "channel_manager.hpp"
 #include "scanner_manager.hpp"
 #include "control_handler.hpp"
+#include "settings_store.hpp"
 #include "utils/endian_utils.hpp"
 #include <iostream>
 #include <thread>
@@ -98,12 +99,15 @@ void DataReceiver::data_receiver_thread() {
     // Not repeated on reconnect, so a transient drop won't stomp live state.
     bool settings_restored = false;
 
+    const string receiver_host = SettingsStore::get_string("receiver_host", "127.0.0.1");
+    const int receiver_data_port = SettingsStore::get_int("receiver_data_port", TCP_DATA_PORT);
     cout << "Data receiver thread started with optimized scalar IQ conversion" << endl;
     cout << "Using compiler auto-vectorized simple scalar loop (8.5% faster than NEON)" << endl;
     cout << "Server-side discrete scanner detection enabled" << endl;
+    cout << "Receiver endpoint: " << receiver_host << ":" << receiver_data_port << endl;
 
     while (running) {
-        if (!data_client.connect_to_port(TCP_DATA_PORT)) {
+        if (!data_client.connect_to_port(receiver_data_port, receiver_host)) {
             global_stats.increment_errors(thread_idx);
             this_thread::sleep_for(seconds(1));
             continue;
@@ -1123,9 +1127,11 @@ void DataReceiver::send_control_command(const string& cmd) {
     // desyncs state the caller assumes was applied (e.g. the startup
     // settings replay's MIXER_SIDE landing while heimdall holds another
     // side).
+    const string receiver_control_host = SettingsStore::get_string("receiver_host", "127.0.0.1");
+    const int receiver_control_port = SettingsStore::get_int("receiver_control_port", TCP_CONTROL_PORT);
     for (int attempt = 0; attempt < 2; attempt++) {
         if (!control_client.is_connected()) {
-            if (!control_client.connect_to_port(TCP_CONTROL_PORT)) continue;
+            if (!control_client.connect_to_port(receiver_control_port, receiver_control_host)) continue;
             control_client.set_nonblocking(true);
         }
         if (control_client.send_data(framed.c_str(), framed.length())) return;

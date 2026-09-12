@@ -29,7 +29,7 @@ EIGEN_EXISTS := $(shell pkg-config --exists eigen3 2>/dev/null && echo yes || ec
 # C++20 required for uWebSockets
 CFLAGS = -Wall -Wextra -std=c++20 -D_GNU_SOURCE -DUWS_NO_ZLIB
 CFLAGS += -I. -Isrc -Isrc/core -Isrc/sdr -Isrc/dsp -Isrc/net -Isrc/web -Iexternal
-LDFLAGS = -lrtlsdr -lfftw3f -lpthread -lm -lz
+LDFLAGS = -lrtlsdr -lfftw3f -lpthread -lm -lz -ltbb
 
 # Add Eigen include path
 ifeq ($(EIGEN_EXISTS),yes)
