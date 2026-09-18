@@ -67,6 +67,14 @@ static std::string build_state_message() {
         + ",\"antenna_bias_tee_mask\":"
         + std::to_string(antenna_bias_tee_mask.load(std::memory_order_relaxed));
 
+    s += ",\"frequency_hz\":" + std::to_string(current_frequency.load(std::memory_order_relaxed));
+    s += ",\"gain_tenth_db\":" + std::to_string(current_gain.load(std::memory_order_relaxed));
+    const auto cal_state = get_phase_compensation_state();
+    const bool cal_valid = cal_state && *cal_state == PhaseCompensatorState::CONVERGED;
+    const bool recal_active = cal_state && *cal_state != PhaseCompensatorState::CONVERGED;
+    s += ",\"calibration_valid\":"; s += cal_valid ? "true" : "false";
+    s += ",\"recalibration_active\":"; s += recal_active ? "true" : "false";
+
     // KerberosSDR support mode: drives the warning banner + guarded recal button.
     s += ",\"kerberos_mode\":";
     s += kerberos_mode.load(std::memory_order_relaxed) ? "true" : "false";

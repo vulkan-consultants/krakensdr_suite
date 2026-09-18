@@ -40,6 +40,7 @@ struct GpsFix {
     int     sats_used = 0;           // satellites used in the solution
     int     sats_visible = 0;        // satellites in view
     int64_t timestamp_ms = 0;        // GPS fix time, epoch ms (0 if unknown)
+    int64_t receipt_monotonic_ns = 0; // local monotonic epoch when TPV time was received
 
     bool has_fix() const { return mode >= 2; }
 

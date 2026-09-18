@@ -284,7 +284,11 @@ void GpsdClient::process_line(const std::string& line) {
         std::string t;
         if (json_str(line, "time", t)) {
             int64_t ms = parse_iso8601_ms(t);
-            if (ms) fix_.timestamp_ms = ms;
+            if (ms) {
+                fix_.timestamp_ms = ms;
+                fix_.receipt_monotonic_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+            }
         }
 
         if (mode >= 2) {

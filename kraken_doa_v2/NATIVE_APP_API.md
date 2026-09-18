@@ -296,3 +296,26 @@ printf 'AUTH:%s\nSUBSCRIBE:FFT,DOA\nDOA:1\n' "$TOKEN" \
 ```
 
 (`--insecure` accepts the self-signed cert for testing — a real app uses TOFU.)
+
+## rf.service.v1 DoA stream (Phase 2)
+
+A lightweight client can request only structured MUSIC estimates with the existing
+TLS WebSocket on port 8080:
+
+    SUBSCRIBE:DOA_SERVICE
+
+The server publishes one UTF-8 JSON text message per enabled decimator whenever
+the 200 ms DoA publication timer runs and calibration is not active.  This is a
+separate pub/sub topic from the legacy binary `DOA` stream, so existing web/native
+clients are unchanged.
+
+Each message is an `rf.service.v1` envelope with `type="doa_estimate"`.  It carries
+the MUSIC result commit system-clock and monotonic epochs, an interpolated GNSS
+epoch from the latest gpsd TPV observation, timing quality/uncertainty, frequency,
+bandwidth, sub-degree array azimuth, elevation when available, MUSIC confidence,
+FWHM-derived 1-sigma angular uncertainty, eigenvalue-ratio power metric,
+calibration/squelch state and decimation factor.
+
+The angular sigma is an estimator-quality measurement, not the final geographic
+LOB uncertainty.  `rf_payload_link` later combines it with vehicle attitude,
+mounting, timing and navigation uncertainty.

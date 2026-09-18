@@ -228,6 +228,10 @@ bool MUSICProcessor::processDecimatedIQ(const SharedDecimator::MultiChannelDecim
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count(),
             std::memory_order_relaxed);
+        result_monotonic_ns_.store(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count(),
+            std::memory_order_relaxed);
     }
 
     // Update statistics (reduced frequency)

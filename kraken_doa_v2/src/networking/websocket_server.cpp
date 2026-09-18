@@ -7,6 +7,7 @@
 #include "decimator_manager.hpp"
 #include "channel_manager.hpp"
 #include "networking/gpsd_client.hpp"
+#include "doa_service.hpp"
 #include "station_info.hpp"
 #include "signal_processing/fft_processor.hpp"
 #include "doa_logger.hpp"
@@ -38,6 +39,7 @@ struct PerSocketData {
 constexpr uint32_t SUB_FFT   = 1u << 0;
 constexpr uint32_t SUB_AUDIO = 1u << 1;
 constexpr uint32_t SUB_DOA   = 1u << 2;
+constexpr uint32_t SUB_DOA_SERVICE = 1u << 3;
 constexpr uint32_t SUB_ALL   = SUB_FFT | SUB_AUDIO | SUB_DOA;
 
 // pub/sub topics. "ctl" carries control-plane traffic (sync_cmd echoes,
@@ -47,6 +49,7 @@ constexpr string_view TOPIC_CTL   = "ctl";
 constexpr string_view TOPIC_FFT   = "fft";
 constexpr string_view TOPIC_AUDIO = "audio";
 constexpr string_view TOPIC_DOA   = "doa";
+constexpr string_view TOPIC_DOA_SERVICE = "doa_service";
 
 // Shared API token, loaded once. Empty => auth disabled (fail-open).
 const string& auth_token() {
@@ -91,6 +94,7 @@ uint32_t parse_sub_mask(string_view list) {
         if      (tok == "FFT")   mask |= SUB_FFT;
         else if (tok == "AUDIO") mask |= SUB_AUDIO;
         else if (tok == "DOA")   mask |= SUB_DOA;
+        else if (tok == "DOA_SERVICE") mask |= SUB_DOA_SERVICE;
         else if (tok == "ALL")   mask |= SUB_ALL;
         if (comma == string_view::npos) break;
         start = comma + 1;
@@ -105,6 +109,7 @@ void apply_subscriptions(WS* ws, uint32_t mask) {
     if (mask & SUB_FFT)   ws->subscribe(TOPIC_FFT);   else ws->unsubscribe(TOPIC_FFT);
     if (mask & SUB_AUDIO) ws->subscribe(TOPIC_AUDIO); else ws->unsubscribe(TOPIC_AUDIO);
     if (mask & SUB_DOA)   ws->subscribe(TOPIC_DOA);   else ws->unsubscribe(TOPIC_DOA);
+    if (mask & SUB_DOA_SERVICE) ws->subscribe(TOPIC_DOA_SERVICE); else ws->unsubscribe(TOPIC_DOA_SERVICE);
 }
 
 // Subscribe the connection and replay current state so its UI matches the
@@ -361,7 +366,8 @@ uWS::SSLApp WebSocketServer::create_ssl_app() {
                 string ack = string("{\"subscribed\":{\"fft\":")
                     + ((mask & SUB_FFT)   ? "true" : "false")
                     + ",\"audio\":" + ((mask & SUB_AUDIO) ? "true" : "false")
-                    + ",\"doa\":"   + ((mask & SUB_DOA)   ? "true" : "false") + "}}";
+                    + ",\"doa\":"   + ((mask & SUB_DOA)   ? "true" : "false")
+                    + ",\"doa_service\":" + ((mask & SUB_DOA_SERVICE) ? "true" : "false") + "}}";
                 ws->send(ack, uWS::TEXT);
                 return;
             }
@@ -437,6 +443,11 @@ void WebSocketServer::web_server_main() {
                         auto doa_message = MessageBuilders::build_multi_doa_message();
                         if (!doa_message.empty()) {
                             global_ssl_app->publish(TOPIC_DOA, doa_message, uWS::BINARY, false);
+                        }
+                        if (!doa_is_calibrating()) {
+                            auto records = capture_doa_records();
+                            for (const auto& service_message : build_doa_service_messages(records))
+                                global_ssl_app->publish(TOPIC_DOA_SERVICE, service_message, uWS::TEXT, false);
                         }
                     }
                 }, 200, 200);

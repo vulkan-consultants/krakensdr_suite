@@ -25,11 +25,17 @@ struct sqlite3_stmt;
 // One bearing line for one decimator at one instant. Mirrors a DOA_value.html row.
 struct DoaRecord {
     int64_t  timestamp_ms = 0;     // capture time (system_clock) — the written timestamp
-    int64_t  source_stamp_ms = 0;  // MUSIC frame stamp — dedup key only, never written
+    int64_t  source_stamp_ms = 0;  // MUSIC frame system-clock stamp
+    int64_t  source_monotonic_ns = 0; // MUSIC frame monotonic stamp
     int      decimator_id = 0;
     float    app_bearing = 0;      // 360 - bearing, wrapped to [0,360); sub-degree
                                    // (parabolic-interpolated peak), as in DOA_value.html
     double   confidence = 0.0;
+    double   doa_sigma_deg = 0.0; // FWHM/2.355 estimate from MUSIC pseudospectrum
+    double   elevation_deg = 0.0;
+    uint32_t bandwidth_hz = 0;
+    uint32_t decimation = 0;
+    bool     squelch_open = true;
     double   power_db = 0.0;
     uint64_t freq_hz = 0;
     std::string antenna;           // "UCA" / "ULA" / "Custom"

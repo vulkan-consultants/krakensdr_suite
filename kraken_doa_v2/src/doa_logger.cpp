@@ -122,12 +122,34 @@ std::vector<DoaRecord> capture_doa_records() {
         }
         double shift = std::abs(min_log);
 
+        // Estimate angular uncertainty directly from the MUSIC lobe width.
+        // The -3 dB full-width at half maximum is converted to an equivalent
+        // Gaussian 1-sigma width using FWHM = 2.355 sigma.
+        const double peak_abs = spectrum.cwiseAbs().maxCoeff();
+        const double half_power = peak_abs / std::sqrt(2.0);
+        Eigen::Index peak_idx = 0;
+        spectrum.cwiseAbs().maxCoeff(&peak_idx);
+        int left = static_cast<int>(peak_idx), right = static_cast<int>(peak_idx);
+        int steps_l = 0, steps_r = 0;
+        while (steps_l < num_angles/2) { int n=(left-1+num_angles)%num_angles; if(std::abs(spectrum(n)) < half_power) break; left=n; ++steps_l; }
+        while (steps_r < num_angles/2) { int n=(right+1)%num_angles; if(std::abs(spectrum(n)) < half_power) break; right=n; ++steps_r; }
+        const double resolution_deg = dec->music_processor->getAngularResolution();
+        const double fwhm_deg = std::max(resolution_deg, (steps_l + steps_r + 1) * resolution_deg);
+        const double doa_sigma_deg = std::max(resolution_deg / std::sqrt(12.0), fwhm_deg / 2.355);
+
         DoaRecord rec;
         rec.timestamp_ms = timestamp;
         rec.source_stamp_ms = dec->music_processor->getResultStampMs();
+        rec.source_monotonic_ns = dec->music_processor->getResultMonotonicNs();
         rec.decimator_id = dec->id;
         rec.app_bearing = app_bearing;
         rec.confidence = confidence;
+        rec.doa_sigma_deg = doa_sigma_deg;
+        if (dec->music_processor->is3DArray()) rec.elevation_deg = dec->music_processor->getPeakAzimuthElevation().second;
+        auto bwopt = get_bandwidth_option(dec->bandwidth_index);
+        rec.bandwidth_hz = static_cast<uint32_t>(std::llround(bwopt.bandwidth_mhz * 1000000.0));
+        rec.decimation = static_cast<uint32_t>(bwopt.decimation_factor);
+        rec.squelch_open = !dec->squelch_enabled.load() || dec->squelch_open.load();
         rec.power_db = power_db;
         rec.freq_hz = static_cast<uint64_t>(freq_hz);
         rec.antenna = ant_type;
